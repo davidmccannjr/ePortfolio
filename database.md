@@ -1,6 +1,6 @@
-<p align='center'># Database Enhancement</p>
+# Database Enhancement
 
-<p align='center'>## Narrative</p>
+## Narrative
 
   The “Who’s That Pokémon” guessing game project was the project I decided to enhance with a focus on Databases. This artifact was created because during the Pokémon television show, when heading into a commercial, the show would show a silhouette of a Pokémon and ask the viewer to guess it. This game uses a similar idea, where players must guess a randomly selected Pokémon and are given clues to steer them towards the answer. I created this project a couple of years ago, and I have continued to update the game to include new Pokémon information as new games have been released.
   
