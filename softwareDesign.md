@@ -28,7 +28,7 @@ In addition to the database changes, for this enhancement I went over my code to
         {
             if (toAdd == null)
             {
-                // Console.WriteLine("MongoDbManager AddGame() passed a null value");
+                Console.WriteLine("MongoDbManager AddGame() passed a null value");
                 return false;
             }
 
