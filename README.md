@@ -22,7 +22,3 @@ It is a programmer’s responsibility to write the code for a project so that it
 [Database Enhancement](https://davidmccannjr.github.io/ePortfolio/database)<br/>
 [Software Design / Engineering Enhancement](https://davidmccannjr.github.io/ePortfolio/softwareDesign)<br/>
 [Data Structures / Algorithms Enhancement](https://davidmccannjr.github.io/ePortfolio/dataStructures)
-
-### Personal Website
-
-To view additional work, please visit my [personal website](http://www.davidmccannjr.com/)
