@@ -4,7 +4,7 @@ This ePortfolio was a final capstone project for Southern New Hampshire Universi
 
 ### Enhancement Links
 
-[Code Review](https://davidmccannjr.github.io/ePortfolio/codeReview)
+[Code Review](https://davidmccannjr.github.io/ePortfolio/codeReview)<br/>
 Database Enhancement: [Who's That Pokemon Artifact](https://davidmccannjr.github.io/ePortfolio/database)
 Software Design / Engineering Enhancement: [Game Organizer Artifact](https://davidmccannjr.github.io/ePortfolio/softwareDesign)
 Data Structures / Algorithms: [Game Organizer Artifact part 2](https://davidmccannjr.github.io/ePortfolio/algorithms)
