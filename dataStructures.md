@@ -14,8 +14,7 @@ Once learning of this method, I decided to load in JSON files which I could easi
 
 ## Custom Query Form Class
 
-'''c#
-
+```c#
 using System;
 using System.Collections.Generic;
 using System.Windows.Forms;
@@ -239,5 +238,4 @@ namespace GameOrganizer
         }
     }
 }
-
-'''
+```
