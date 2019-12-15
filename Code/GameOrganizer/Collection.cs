@@ -1,36 +1,20 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
-using System.Data;
 using System.Drawing;
 using System.Linq;
 using System.Windows.Forms;
-using System.Xml.Linq;
-using System.Xml;
+using MongoDB.Driver;
 
 namespace GameOrganizer
 {
+    /// <summary>
+    /// A WindowsForm that allows users to display or edit information about a video game collection.
+    /// Utilizes MongoDB collections to read and store the game collection information.
+    /// </summary>
     public partial class Collection : Form
     {
-        #region Variables / Properties
-
         /// <summary>
-        /// Default color of a selected control.
-        /// </summary>
-        private static Color DefaultGameControlColor
-        {
-            get { return Color.LightBlue; }
-        }
-
-        /// <summary>
-        /// Background color of a selected control.
-        /// </summary>
-        private static Color HighlightGameControlColor
-        {
-            get { return Color.White; }
-        }
-
-        /// <summary>
-        /// Returns a string of the location of the base directory
+        /// Shorthand to return AppDomain.CurrentDomain.BaseDirectory string.
         /// </summary>
         public static string BaseDirectory
         {
@@ -38,24 +22,9 @@ namespace GameOrganizer
         }
 
         /// <summary>
-        /// Name for the catch-all container that stores the games that can't
-        /// be catagorized in other containers due to special cases.
+        /// Master list of games in the collection.
         /// </summary>
-        private static string CatchAllContainerName
-        {
-            get { return "%"; }
-        }
-
-        /// <summary>
-        /// Has the collection list been altered?
-        /// Used to request save if true.
-        /// </summary>
-        private bool collectionChanged;
-
-        /// <summary>
-        /// Stats relating to the game collection.
-        /// </summary>
-        private readonly CollectionStats stats;
+        private List<GameControl> games;
 
         /// <summary>
         /// Currently selected game control.
@@ -63,25 +32,9 @@ namespace GameOrganizer
         private GameControl selected;
 
         /// <summary>
-        /// List of container controls based on the sort condition.
-        /// Add containers using the AddContainer function.
+        /// A WindowsForm that displays various stats relating to the game collection.
         /// </summary>
-        private List<ContainerControl> containers;
-
-        /// <summary>
-        /// Master list of games in the collection. 
-        /// Add games using the AddGame function.
-        /// </summary>
-        private List<Game> games;
-
-        /// <summary>
-        /// Save path for the collection.
-        /// </summary>
-        private string collectionPath;
-
-        #endregion
-
-        #region Constructor
+        private CollectionStats statForm;
 
         /// <summary>
         /// Constructor for a collection form.
@@ -90,524 +43,186 @@ namespace GameOrganizer
         {
             InitializeComponent();
 
-            collectionPath = "";
-            stats = new CollectionStats();
-            games = new List<Game>();
-            containers = new List<ContainerControl>();
+            games = new List<GameControl>();
 
-            // Adds function that disables scroll wheel input on the sort combo box
-            c_sort.MouseWheel += sortCombo_MouseWheelMove;
+            // Disables scroll wheel input on the sort combo box
+            c_sort.MouseWheel += SortCombo_MouseWheelMove;
 
             // Add function to be called when the user changes how the games are sorted.
             c_sort.SelectedIndex = 0;
-            c_sort.SelectedIndexChanged += sortCombo_IndexChange;
+            c_sort.SelectedIndexChanged += SortCombo_IndexChange;
 
             // Disable the edit and delete buttons - no game selected.
-            c_edit.Enabled = c_delete.Enabled = false;                 
-             
-            // Adds delegate to the form closing event
-            FormClosing += Collection_FormClosing;
+            c_edit.Enabled = c_delete.Enabled = false;   
         }
-
-        #endregion
-
-        #region Add / Remove
-
+        
         /// <summary>
-        /// Adds a container to both the container list and the
-        /// list of controls for the container panel.
+        /// Adds a game to the game collection.
         /// </summary>
-        /// <param name="name">Name of the container.</param>
-        /// <param name="toSort">Game to add to the container.</param>
-        private void AddContainer(string name, Game toSort)
+        /// <param name="toAdd">Game to add</param>
+        private void AddGame(Game toAdd)
         {
-            // Create a new container control and add event listeners
-            ContainerControl c = new ContainerControl(name);
-            c.DropDownChange += container_OnDropChange;
-            c.gameListPanel.ControlAdded += container_GameControlAdded;
-
-            // Add the game to the container
-            c.AddGame(toSort);
-
-            // Add container to container list and as a control for the container panel.
-            int index = containers.Count;
-            for (int i = 0; i < containers.Count; i++)
+            if (toAdd == null)
             {
-                int compareResult;
-                try
-                {   // Try comparing ints - Higher numbers ordered first
-                    compareResult = -int.Parse(c.Name).CompareTo(int.Parse(containers[i].Name));
-                }
-                catch
-                {
-                    // Compare string - Lower letters ordered first
-                    compareResult = String.Compare(c.Name, containers[i].Name);
-                }
-                
-                if (compareResult == -1)
-                {
-                    index = i;
-                    break;
-                }
+                Console.WriteLine("AddGame was passed a null value");
+                return;
             }
-            containers.Insert(index, c);
-            containerListPanel.Controls.Add(c);
-            containerListPanel.Controls.SetChildIndex(c, index);
-        }
 
-        /// <summary>
-        /// Adds a game to the collection. A game control is then added to the
-        /// container that matches the sort condition. If a container can not 
-        /// be found, a new one is created.
-        /// </summary>
-        /// <param name="toAdd">Game to add.</param>
-        public void AddGame(Game toAdd)
-        {
-            if (toAdd == null) return;
-
-            // Do not add games with similar name and platform
-            if (games.Contains(toAdd))
+            // Games need a unique MongoDB ObjectId
+            if (games.Any(control => control.Game.Id == toAdd.Id))
             {
                 MessageBox.Show(String.Format(
-                    "'{0}' for {1} is already in collection.", 
+                    "'{0}' for {1} cannot be added. A game with the same ObjectId already exists.", 
                     toAdd.Title, 
                     toAdd.Platform));
                 return;
             }
 
-            // Insert game to the sorted game list based on the game's title
-            int index = games.Count;
-            for (int i = 0; i < games.Count; i++)
-            {
-                if (String.Compare(toAdd.Title, games[i].Title) == -1)
-                {
-                    index = i;
-                    break;
-                }
-            }
-            games.Insert(index, toAdd);
-            stats.GameAdded(toAdd);
+            // Create a game control to display the game information
+            GameControl newControl = new GameControl(toAdd);            
+            games.Add(newControl);
 
-            // Adds game to the appropriate container
-            GetSortingFunc()(toAdd);
+            // Add the game to the appropriate container
+            containerManager.SortGame(newControl);
 
-            // Reallign containers to account for newly added game
-            ReallignContainers();
+            // Adds the game information to the collection stats
+            statForm.GameAdded(toAdd);
+
+            // Subscribe to Click event
+            newControl.Click += Container_GameControlClick;
         }
 
         /// <summary>
-        /// Removes all containers.
+        /// Deletes the game from the game collection.
         /// </summary>
-        private void RemoveAll()
+        /// <param name="toDeletee">Game to delete</param>
+        private void DeleteGame(GameControl toDelete)
         {
-            while (containers.Count != 0)
+            if (toDelete == null)
             {
-                RemoveContainer(containers[0]);
-            }
-        }
-
-        /// <summary>
-        /// Removes a container and removes the games stored from the collection.
-        /// </summary>
-        private void RemoveContainer(ContainerControl c)
-        {
-            // Remove all games from container/*
-            while (c.gameControls.Count != 0)
-            {
-                RemoveGame(c.gameControls[0]);
+                Console.WriteLine("DeleteGame was passed a null value");
+                return;
             }
 
-            // Remove delegates from container
-            c.DropDownChange -= container_OnDropChange;
-            c.gameListPanel.ControlAdded -= container_GameControlAdded;
-
-            // Remove container from application
-            containers.Remove(c);
-            containerListPanel.Controls.Remove(c);
-            c.Dispose();
-        }
-
-        /// <summary>
-        /// Removes the game from the collection. 
-        /// </summary>
-        /// <param name="toRemove">Game to remove.</param>
-        private void RemoveGame(GameControl toRemove)
-        {
-            if (toRemove == null) return;
-
-            // Reset selected value if the game being removed is the selected control
-            if (selected == toRemove)
+            // Reset selected value if the game being removed is the selected control.
+            if (selected == toDelete)
             {
                 ResetSelected();
             }
 
-            // Find container and remove the game from it
-            ContainerControl c = containers.Find(a => a.gameControls.Contains(toRemove));
-            if (c != null)
-            {
-                c.RemoveGame(toRemove);
-                if (c.gameControls.Count == 0)
-                {
-                    RemoveContainer(c);
-                }
-            }
+            // Remove the game from its display container
+            containerManager.RemoveGame(toDelete);
+            
+            // Remove game from the collection
+            games.Remove(toDelete);
+            statForm.GameRemoved(toDelete.Game);
 
             // Remove delegate from click event
-            toRemove.Click -= container_GameSelected;
+            toDelete.Click -= Container_GameControlClick;
 
-            // Remove game from the collection
-            games.Remove(toRemove.Game);
-            stats.GameRemoved(toRemove.Game);
-            ReallignContainers();
+            toDelete.Dispose();
         }
 
         /// <summary>
-        /// Displays a save file dialog and saves collection to a text file.
+        /// Initial loading function that queries the database for the game collection.
+        /// Creates GameControl objects that contain the game information.
         /// </summary>
-        private bool Save()
+        private void LoadGames()
         {
-            if(collectionPath == "" ||
-                System.IO.Path.GetExtension(collectionPath) != ".xml")
+            // Remove any game before loading
+            while(games.Count > 0)
             {
-                // Create the save file dialog
-                SaveFileDialog s = new SaveFileDialog();
-                s.Filter = "XML File (*.xml) | *.xml";
-                s.OverwritePrompt = true;
-
-                if(s.ShowDialog() == DialogResult.OK)
-                {
-                    // Enforce proper extension
-                    string ext = System.IO.Path.GetExtension(s.FileName);
-                    if (ext != ".xml")
-                    {
-                        s.FileName.Replace(ext, ".xml");
-                    }
-                    collectionPath = s.FileName;
-                }
-                else
-                {
-                    return false;
-                }
+                DeleteGame(games[0]);
             }
 
-            // Save file asks for overwrite, so delete file at path
-            System.IO.File.Delete(collectionPath);
-
-            var write = XmlWriter.Create(collectionPath);
-            write.WriteStartDocument();
-            write.WriteStartElement("Collection");
-            foreach(Game game in games)
+            // Add games to the collection
+            List<Game> gameCollection = MongoDbManager.FindAll();
+            foreach (var game in gameCollection)
             {
-                write.WriteStartElement("Game");
-                write.WriteElementString("Title", game.Title);
-                write.WriteElementString("Platform", game.Platform);
-                write.WriteElementString("Genre", game.Genre);
-                write.WriteElementString("Release", game.Released.ToShortDateString());
-                write.WriteElementString("Purchase", game.Purchased.ToShortDateString());
-                write.WriteElementString("Cost", game.Cost.ToString("0.00"));
-                write.WriteElementString("Rating", game.Rating.ToString());
-                write.WriteElementString("HasCover", game.HasManual.ToString());
-                write.WriteElementString("HasManual", game.HasManual.ToString());
-                write.WriteElementString("Cover", game.CoverFilePath);
-                write.WriteEndElement();
-
+                AddGame(game);
             }
-            write.WriteEndElement();
-            write.WriteEndDocument();
-            write.Close();
-
-            collectionChanged = false;
-            return true;
-        }
-
-        #endregion
-
-        #region Sorting
-
-        /// <summary>
-        /// Gets the function that organizes the games
-        /// based on how the games are to be sorted.
-        /// </summary>
-        /// <returns>Sorter function</returns>
-        public Action<Game> GetSortingFunc()
-        {
-            switch (c_sort.Text)
-            {
-                case "Platform":
-                    return SortByPlatform;
-                case "Genre":
-                    return SortByGenre;
-                case "Release Date":
-                    return SortByRelease;
-                case "Purchase Date":
-                    return SortByPurchase;
-                case "Cost":
-                    return SortByCost;
-                case "Rating":
-                    return SortByRating;
-                case "Title":
-                default:
-                    break;
-            }
-
-            return SortByTitle;
         }
 
         /// <summary>
-        /// Adds a game to the display based on the first letter in the title.
+        /// Update the game control with updated information from the database
         /// </summary>
-        /// <param name="toSort">Game to sort</param>
-        public void SortByTitle(Game toSort)
+        /// <param name="control">GameControl to update</param>
+        private void UpdateGame(GameControl toUpdate)
         {
-            // Use the first letter in the title to organize the games
-            string first = toSort.Title.Substring(0, 1).ToUpper();
-
-            // Look to see if an appropriate container already exists
-            bool hasContainer = false;
-            ContainerControl c = containers.Find(a => a.Name.Substring(0, 1) == first);
-            if (c != null)
+            if(toUpdate == null)
             {
-                c.AddGame(toSort);
-                hasContainer = true;
+                Console.WriteLine("UpdateGame passed a null value");
+                return;
             }
-            
-            // If not, create a new container to store the game.
-            if (!hasContainer)
+
+            // Find updated game information from the database
+            Game updated = MongoDbManager.FindOne(toUpdate.Game.Id);
+
+            if (updated != null)
             {
-                if (Char.IsLetter(first, 0))
+                // Delete and then re-add the game control in case sorting information has changed
+                DeleteGame(toUpdate);
+                AddGame(updated);
+
+                // Search game controls for updated game and re-select it
+                for(int i = 0; i < games.Count; i++)
                 {
-                    AddContainer(first, toSort);
-                }
-                else
-                {
-                    // Find catch-all container
-                    c = containers.Find(a => a.Name == CatchAllContainerName);
-                    if (c == null)
+                    if(games[i].Game.Id == updated.Id)
                     {
-                        AddContainer(CatchAllContainerName, toSort);
-                    }
-                    else
-                    {
-                        c.AddGame(toSort);
+                        SetSelected(games[i]);
+                        break;
                     }
                 }
             }
         }
-
-        /// <summary>
-        /// Adds a game to the display based on the platform.
-        /// </summary>
-        /// <param name="toSort">Game to sort</param>
-        public void SortByPlatform(Game toSort)
-        {
-            // Look to see if an appropriate container already exists
-            bool hasContainer = false;
-            ContainerControl c = containers.Find(a => a.Name == toSort.Platform);
-            if (c != null)
-            {
-                c.AddGame(toSort);
-                hasContainer = true;
-            }
-
-            // If not, create a new container to store the game
-            if (!hasContainer)
-            {
-                AddContainer(toSort.Platform, toSort);
-            }
-        }
-
-        public void SortByGenre(Game toSort)
-        {
-            // Look to see if an appropriate container already exists
-            bool hasContainer = false;
-            ContainerControl c = containers.Find(a => a.Name == toSort.Genre);
-            if (c != null)
-            {
-                c.AddGame(toSort);
-                hasContainer = true;
-            }
-
-            // If not, create a new container to store the game
-            if (!hasContainer)
-            {
-                AddContainer(toSort.Genre, toSort);
-            }
-        }
-
-        public void SortByRelease(Game toSort)
-        {
-            // Look to see if an appropriate container already exists
-            bool hasContainer = false;
-            ContainerControl c = containers.Find(a => a.Name == toSort.Released.Year.ToString());
-            if (c != null)
-            {
-                c.AddGame(toSort);
-                hasContainer = true;
-            }
-
-            // If not, create a new container to store the game
-            if (!hasContainer)
-            {
-                AddContainer(toSort.Released.Year.ToString(), toSort);
-            }
-        }
-
-        public void SortByPurchase(Game toSort)
-        {
-            // Look to see if an appropriate container already exists
-            bool hasContainer = false;
-            ContainerControl c = containers.Find(a => a.Name == toSort.Purchased.Year.ToString());
-            if (c != null)
-            {
-                c.AddGame(toSort);
-                hasContainer = true;
-            }
-
-            // If not, create a new container to store the game
-            if (!hasContainer)
-            {
-                AddContainer(toSort.Purchased.Year.ToString(), toSort);
-            }
-        }
-
-        public void SortByCost(Game toSort)
-        {
-            // Get range of values
-            double cost = Convert.ToDouble(toSort.Cost);
-            double floor = cost <= 0 ? 0 : Math.Floor(cost / 10) * 10;
-            double ceil = cost <= 0 ? 9.99: Math.Ceiling(cost / 10) * 10 - 0.01;
-            string range = "$" + floor + " - $" + ceil;
-
-            // Look to see if an appropriate container already exists
-            bool hasContainer = false;
-            ContainerControl c = containers.Find(a => a.Name == range);
-            if (c != null)
-            {
-                c.AddGame(toSort);
-                hasContainer = true;
-            }
-
-            // If not, create a new container to store the game
-            if (!hasContainer)
-            {
-                AddContainer(range, toSort);
-            }
-        }
-
-        public void SortByRating(Game toSort)
-        {
-            // Look to see if an appropriate container already exists
-            bool hasContainer = false;
-            ContainerControl c = containers.Find(a => a.Name == toSort.Rating.ToString());
-            if (c != null)
-            {
-                c.AddGame(toSort);
-                hasContainer = true;
-            }
-
-            // If not, create a new container to store the game
-            if (!hasContainer)
-            {
-                AddContainer(toSort.Rating.ToString(), toSort);
-            }
-        }
-
-        /// <summary>
-        /// Realligns the containers to place them in their organized positions.
-        /// </summary>
-        private void ReallignContainers()
-        {
-            // FASTER IMPLEMENT 
-            //*
-            Point p = new Point(0, -containerListPanel.AutoScrollPosition.Y);
-            containerListPanel.AutoScrollPosition = Point.Empty;
-
-            int y = 0;
-            for (int i = 0; i < containerListPanel.Controls.Count; i++)
-            {
-                containerListPanel.Controls[i].Location = new Point(0, y);
-                y += ((ContainerControl)containerListPanel.Controls[i]).DisplayHeight;
-            }
-
-            containerListPanel.AutoScrollPosition = p;
-
-           
-        }
-
-        #endregion // Sort Methods
-
-        #region Selected
 
         /// <summary>
         /// Unselects the current selected game and resets display information.
         /// </summary>
-        public void ResetSelected()
+        private void ResetSelected()
         {
-            // Set background color back to default
-            if (selected != null)
-            {
-                selected.BackColor = DefaultGameControlColor;
-            }
+            // First reset background color before unselecting
+            SetSelectedColor(GameControl.DefaultColor);
 
-            // Reset all display to default
-            c_title.ResetText();
-            c_platform.ResetText();
-            c_genre.ResetText();
-            c_releaseDate.ResetText();
-            c_purchaseDate.ResetText();
-            c_cost.ResetText();
-            c_ratingControl.SetRating(0);
-            checkBox1.Checked = checkBox2.Checked = false;
-            c_cover.Image = null;
-
-            // Remove selected reference
             selected = null;
-
-            // Disable buttons to edit or delete the selected game
+            gameDisplay1.ResetDisplay();
             c_edit.Enabled = c_delete.Enabled = false;
         }
 
         /// <summary>
-        /// Unselects the current selected game and resets display information.
+        /// Sets the selected game control and displays the game information.
         /// </summary>
-        public void SetSelected(GameControl gC)
+        private void SetSelected(GameControl gC)
         {
-            // If there is a selected, change background color of selected to default
-            if (selected != null)
+            if (gC == null || gC.Game == null)
             {
-                selected.BackColor = DefaultGameControlColor;
+                return;
             }
 
-            // Set selected to the new game control
+            // If there is a selected game control, change background color to default
+            SetSelectedColor(GameControl.DefaultColor);
+
+            // Set selected to the new game control and highlight
             selected = gC;
-            selected.BackColor = HighlightGameControlColor;
-
-            // Set selected to the game passed in event argument
-            c_cover.Image = selected.Game.CoverArt;
-            if (selected.Game.CoverFilePath != "" && c_cover.Image == null)
-            {   // Error loading image
-                c_cover.Image = null;
-                c_cover.BackgroundImage = System.Drawing.SystemIcons.Error.ToBitmap();
-            }
+            SetSelectedColor(GameControl.HighlightColor);
 
             // Display selected game information
-            c_title.Text = selected.Game.Title;
-            c_platform.Text = selected.Game.Platform;
-            c_genre.Text = selected.Game.Genre;
-            c_releaseDate.Text = selected.Game.Released.ToShortDateString();
-            c_purchaseDate.Text = selected.Game.Purchased.ToShortDateString();
-            c_cost.Text = selected.Game.Cost.ToString("$0.00");
-            c_ratingControl.SetRating(selected.Game.Rating);
-            checkBox1.Checked = selected.Game.HasCover;
-            checkBox2.Checked = selected.Game.HasManual;
-
-            // Enable buttons to edit or delete selected game
+            gameDisplay1.Display(gC.Game);
             c_edit.Enabled = c_delete.Enabled = true;
         }
 
-        #endregion
-
-        #region Events
+        /// <summary>
+        /// Sets the background color of the selected game control.
+        /// </summary>
+        /// <param name="color"></param>
+        private void SetSelectedColor(Color color)
+        {
+            // Set background color back to default
+            if (selected != null)
+            {
+                selected.BackColor = color;
+            }
+        }
 
         /// <summary>
         /// Delegate called when clicking on the add button.
@@ -615,63 +230,35 @@ namespace GameOrganizer
         /// </summary>
         /// <param name="sender">Sender</param>
         /// <param name="e">Event args</param>
-        private void addButton_Click(object sender, EventArgs e)
+        private void AddButton_Click(object sender, EventArgs e)
         {
-            // Display game form and created add game
+            // Display game form and add game if Ok Button selected
             using (GameForm g = new GameForm())
             {
                 if (g.ShowDialog() == DialogResult.OK)
                 {
-                    collectionChanged = true;
-                    AddGame(g.Game);
+                    MongoDbManager.AddGame(g.Game);
+                    AddGame(g.Game);                    
                 }
             }
         }
 
         /// <summary>
-        /// Checks to see if changes have been made to the form.
-        /// If there have been, request if user wanted to save these changes.
+        /// Event called when the form is loaded. Loads all the games from
+        /// the MongoDB "Games" collection.
         /// </summary>
-        /// <param name="sender">Sender</param>
-        /// <param name="e">Closing event args</param>
-        void Collection_FormClosing(object sender, FormClosingEventArgs e)
+        /// <param name="sender"></param>
+        /// <param name="e"></param>
+        private void Collection_Load(object sender, EventArgs e)
         {
-            // Show dialog to request a save if changes have been made
-            if (collectionChanged)
+            if (!MongoDbManager.ConnectionEstablished())
             {
-                DialogResult result = MessageBox.Show(
-                    "Save changes before closing?",
-                    "Save Changes?",
-                    MessageBoxButtons.YesNoCancel);
-
-                if (result == DialogResult.Yes)
-                {
-                    if(!Save())
-                    {
-                        e.Cancel = true;
-                    }
-                }
-                else if (result == DialogResult.Cancel)
-                {
-                    // Cancel close operation
-                    e.Cancel = true;
-                }
+                MessageBox.Show("Could not connect to the database. The program will close.");
+                Close();
             }
-        }
 
-        /// <summary>
-        /// Delegate called when a game control is added to a container.
-        /// </summary>
-        /// <param name="sender">Sender</param>
-        /// <param name="e">Game Control args</param>
-        private void container_GameControlAdded(object sender, ControlEventArgs e)
-        {
-            GameControl gC = e.Control as GameControl;
-
-            if (gC == null) return;
-
-            // Add delegate to the click event
-            gC.Click += container_GameSelected;
+            statForm = new CollectionStats();
+            LoadGames();
         }
 
         /// <summary>
@@ -679,11 +266,13 @@ namespace GameOrganizer
         /// </summary>
         /// <param name="sender">Sender</param>
         /// <param name="e">Game Control args</param>
-        private void container_GameSelected(object sender, EventArgs e)
+        private void Container_GameControlClick(object sender, EventArgs e)
         {
             GameControl gC = sender as GameControl;
-
-            if (gC == null) return;
+            if (gC == null)
+            {
+                return;
+            }
 
             // If the control is already the selected, deselect it
             if (gC == selected)
@@ -697,27 +286,27 @@ namespace GameOrganizer
         }
 
         /// <summary>
-        /// Delegate called when a container dropdown is clicked.
-        /// Realligns the containers on the container list display.
-        /// </summary>
-        /// <param name="sender">Object sender</param>
-        /// <param name="e">Event args</param>
-        private void container_OnDropChange(object sender, EventArgs e)
-        {
-            ReallignContainers();
-        }
-
-        /// <summary>
         /// Delegate called when the delete button is clicked.
         /// </summary>
         /// <param name="sender">Sender</param>
         /// <param name="e">Event args</param>
-        private void deleteButton_Click(object sender, EventArgs e)
+        private void DeleteButton_Click(object sender, EventArgs e)
         {
-            if (selected == null) return;
+            if (selected == null)
+            {
+                Console.WriteLine("No game currently selected. Delete failed.");
+                return;
+            }
 
-            RemoveGame(selected);
-            collectionChanged = true;
+            DialogResult result = MessageBox.Show("Are you sure you want to delete this game?", 
+                "Confirm Delete",
+                MessageBoxButtons.YesNo);
+            if (result == DialogResult.Yes)
+            {
+                // Remove from database first while selected control still active
+                MongoDbManager.RemoveGame(selected.Game);
+                DeleteGame(selected);
+            }
         }
 
         /// <summary>
@@ -726,189 +315,78 @@ namespace GameOrganizer
         /// </summary>
         /// <param name="sender">Sender</param>
         /// <param name="e">Event args</param>
-        private void editButton_Click(object sender, EventArgs e)
+        private void EditButton_Click(object sender, EventArgs e)
         {
-            if (selected == null) return;
+            if (selected == null)
+            {
+                return;
+            }
 
             // Create game form with the selected game as a template
-            // Remove selected game and add newly created game
-            GameForm form = new GameForm(selected.Game);
-            if (form.ShowDialog() == DialogResult.OK)
+            using (GameForm form = new GameForm(selected.Game))
             {
-                RemoveGame(selected);
-                AddGame(form.Game);
-                collectionChanged = true;
-
-                // Find game control and select it
-                GameControl gc = containers.SelectMany(a => a.gameControls).
-                    Where(b => b.Game == form.Game).
-                    Single();
-                SetSelected(gc);
-            }
-        }
-
-        /// <summary>
-        /// Delegate called when the new tool strip menu item is clicked.
-        /// </summary>
-        /// <param name="sender">Sender</param>
-        /// <param name="e">Event args</param>
-        private void newToolStripMenuItem_Click(object sender, EventArgs e)
-        {
-            // Show dialog to request a save if changes have been made
-            if(collectionChanged)
-            {
-                DialogResult result = MessageBox.Show(
-                    "Save changes before continuing?",
-                    "Save Changes?",
-                    MessageBoxButtons.YesNoCancel);
-
-                if(result == DialogResult.Yes)
+                if (form.ShowDialog() == DialogResult.OK)
                 {
-                    if (!Save())
+                    // Update the selected game control if database update successful
+                    if (MongoDbManager.UpdateGame(selected.Game.Id, form.Game))
                     {
-                        return;
+                        UpdateGame(selected);
                     }
                 }
-                else if(result == DialogResult.Cancel)
-                {
-                    return;
-                }
-            }
-
-            // Remove all of the games in the collection
-            collectionPath = "";
-            collectionChanged = false;
-            RemoveAll();
-        }
-
-        /// <summary>
-        /// Delegate called when open menu item clicked.
-        /// </summary>
-        /// <param name="sender">Sender</param>
-        /// <param name="e">Event args</param>
-        private void openToolStripMenuItem_Click(object sender, EventArgs e)
-        {
-            // Request a save if changes have been made
-            if (collectionChanged)
-            {
-                DialogResult result = MessageBox.Show(
-                    "Save changes before continuing?",
-                    "Save Changes?",
-                    MessageBoxButtons.YesNoCancel);
-
-                if (result == DialogResult.Yes)
-                {
-                    if (!Save())
-                    {
-                        return;
-                    }
-                }
-                else if (result == DialogResult.Cancel)
-                {
-                    return;
-                }
-            }
-
-            // Create an open file dialog to open a file
-            OpenFileDialog o = new OpenFileDialog();
-            o.Filter = "XML Files(*.xml) | *.xml";
-
-            if (o.ShowDialog() == DialogResult.OK)
-            {
-                // Set new collection path
-                collectionPath = o.FileName;
-
-                // Remove current collection and open a saved one
-                RemoveAll();
-
-                var doc = XDocument.Load(o.FileName);
-                foreach (var game in doc.Descendants("Game"))
-                {
-                    try
-                    {
-                        string title = game.Element("Title").Value;
-                        string platform = game.Element("Platform").Value;
-                        string genre = game.Element("Genre").Value;
-                        DateTime release = Convert.ToDateTime(game.Element("Release").Value);
-                        DateTime purchased = Convert.ToDateTime(game.Element("Purchase").Value);                        
-                        double cost = Convert.ToDouble(game.Element("Cost").Value);
-                        byte rating = Convert.ToByte(game.Element("Rating").Value);
-                        bool hasCover = Convert.ToBoolean(game.Element("HasCover").Value);
-                        bool hasManual = Convert.ToBoolean(game.Element("HasManual").Value);
-                        string location = game.Element("Cover").Value;
-                        AddGame(Game.Build(GameInfo.Build(title, platform, genre, release, location),
-                            new OwnershipInfo(purchased, cost, hasCover, hasManual, rating)));
-                    }
-                    catch { continue; }
-                }
-
-                // New collection opened
-                collectionChanged = false;
             }
         }
 
         /// <summary>
-        /// Saves the collection as a new file.
-        /// </summary>
-        /// <param name="sender">Sender</param>
-        /// <param name="e">Event args</param>
-        private void saveAsToolStripMenuItem_Click(object sender, EventArgs e)
-        {
-            string temp = collectionPath;
-            collectionPath = "";
-            if (!Save())
-            {
-                collectionPath = temp;
-            }
-        }
-
-        /// <summary>
-        /// Saves the collection.
-        /// </summary>
-        /// <param name="sender">Sender</param>
-        /// <param name="e">Event args</param>
-        private void saveToolStripMenuItem_Click(object sender, EventArgs e)
-        {
-            Save();
-        }
-
-        /// <summary>
-        /// Event called when the game sorting logic is changed.
+        /// Delegate called when the game sorting logic is changed.
         /// Organizes the game collection based on the new sorting logic.
         /// </summary>
         /// <param name="sender">Sender</param>
         /// <param name="e">Event args</param>
-        private void sortCombo_IndexChange(object sender, EventArgs e)
+        private void SortCombo_IndexChange(object sender, EventArgs e)
         {
-            // Remove all container information
-            containerListPanel.AutoScrollPosition = Point.Empty;
-            containerListPanel.Controls.Clear();
-            containers.Clear();
-
             // Reset selected game information
             ResetSelected();
 
-            // Sort games into new containers using the sorting function
-            Action<Game> sorter = GetSortingFunc();
-            for (int i = 0; i < games.Count; i++)
+            // Updates the game sort function based on the selected sort criteria
+            switch (c_sort.Text)
             {
-                sorter(games[i]);
+                case "Platform":
+                    containerManager.SetSortFunction(ContainerManager.SortValue.Platform);
+                    break;
+                case "Genre":
+                    containerManager.SetSortFunction(ContainerManager.SortValue.Genre);
+                    break;
+                case "Release Date":
+                    containerManager.SetSortFunction(ContainerManager.SortValue.Released);
+                    break;
+                case "Purchase Date":
+                    containerManager.SetSortFunction(ContainerManager.SortValue.Purchased);
+                    break;
+                case "Cost":
+                    containerManager.SetSortFunction(ContainerManager.SortValue.Cost);
+                    break;
+                case "Rating":
+                    containerManager.SetSortFunction(ContainerManager.SortValue.Rating);
+                    break;
+                case "Title":
+                default:
+                    containerManager.SetSortFunction(ContainerManager.SortValue.Title);
+                    break;
             }
-
-            // Reallign new containers
-            ReallignContainers();
         }
 
         /// <summary>
-        /// Event called when the sort combo box recieves mouse scrollwheel input.
+        /// Delegate called when the sort combo box recieves mouse scrollwheel input.
         /// Disables any mouse scrollwheel input.
         /// </summary>
         /// <param name="sender">Sender</param>
         /// <param name="e">Event args</param>
-        private void sortCombo_MouseWheelMove(object sender, EventArgs e)
+        private void SortCombo_MouseWheelMove(object sender, EventArgs e)
         {
-            HandledMouseEventArgs ee = (HandledMouseEventArgs)e;
-            ee.Handled = true;
+            if (e is HandledMouseEventArgs ee)
+            {
+                ee.Handled = true;
+            }
         }
 
         /// <summary>
@@ -916,9 +394,9 @@ namespace GameOrganizer
         /// </summary>
         /// <param name="sender">Sender</param>
         /// <param name="e">Event args</param>
-        private void viewCollectionStatsToolStripMenuItem_Click(object sender, EventArgs e)
+        private void ViewCollectionStatsToolStripMenuItem_Click(object sender, EventArgs e)
         {
-            stats.ShowDialog();
+            statForm.ShowDialog();
         }
 
         /// <summary>
@@ -926,36 +404,51 @@ namespace GameOrganizer
         /// </summary>
         /// <param name="sender"></param>
         /// <param name="e"></param>
-        private void viewGamesToolStripMenuItem_Click(object sender, EventArgs e)
+        private void ViewGamesToolStripMenuItem_Click(object sender, EventArgs e)
         {
-            // Create new form
-            Form gameListForm = new Form();
-            gameListForm.FormBorderStyle = FormBorderStyle.FixedToolWindow;
-            gameListForm.StartPosition = FormStartPosition.CenterScreen;
-            gameListForm.Size = new Size(400, 300);
-
-            // Create list view to display games
-            ListView list = new ListView();
-            gameListForm.Controls.Add(list);
-
-            list.Dock = DockStyle.Fill;
-            list.View = View.Details;
-            list.FullRowSelect = true;
-            list.Columns.Add("Title", (int)(list.Size.Width * (3 / 4.0)));
-            list.Columns.Add("Platform", list.Width - list.Columns[0].Width);
-
-            // Add games to the list view
-            for (int i = 0; i < games.Count; i++)
+            using (Form gameListForm = new Form())
+            using(ListView list = new ListView())
             {
-                ListViewItem item = new ListViewItem(new string[] { games[i].Title, games[i].Platform });
-                list.Items.Add(item);
-            }
+                gameListForm.FormBorderStyle = FormBorderStyle.FixedToolWindow;
+                gameListForm.StartPosition = FormStartPosition.CenterScreen;
+                gameListForm.Size = new Size(400, 300);
 
-            // Display the form
-            gameListForm.ShowDialog();
+                // Add list view to display games
+                gameListForm.Controls.Add(list);
+
+                // Set list view properties
+                list.Dock = DockStyle.Fill;
+                list.View = View.Details;
+                list.FullRowSelect = true;
+                list.Columns.Add("Title", (int)(list.Size.Width * (3 / 4.0)));
+                list.Columns.Add("Platform", list.Width - list.Columns[0].Width);
+                list.Sorting = SortOrder.Ascending;
+
+                // Add games to the list view
+                for (int i = 0; i < games.Count; i++)
+                {
+
+                    ListViewItem item = new ListViewItem(new string[] { games[i].Game.Title, games[i].Game.Platform });
+                    list.Items.Add(item);
+                }
+
+                // Display the form
+                gameListForm.ShowDialog();
+            }
         }
 
-        #endregion // EventHandler Methods
-    }
-    
+        /// <summary>
+        /// Delegate called when the View Custom Query tool strip menu item is clicked.
+        /// Creates a new Custom Query Form and displays it.
+        /// </summary>
+        /// <param name="sender"></param>
+        /// <param name="e"></param>
+        private void ViewCustomQueryToolStripMenuItem_Click(object sender, EventArgs e)
+        {
+            using (CustomQueryForm customQueryForm = new CustomQueryForm())
+            {
+                customQueryForm.ShowDialog();
+            }
+        }
+    }    
 }
