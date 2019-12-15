@@ -1,42 +1,25 @@
-﻿using System;
-using System.Collections.Generic;
+using System;
 using System.Data;
 using System.Drawing;
 using System.Linq;
 using System.Windows.Forms;
-using System.Xml.Linq;
 
 namespace WhosThatPokemon
 {
     /// <summary>
-    /// Form that holds the game logic.
+    /// Form that holds the guessing game logic.
     /// </summary>
     public partial class GameForm : Form
     {
         /// <summary>
-        /// Determines if game logic code is run.
+        /// Maintains the Pokemon for the program.
         /// </summary>
-        bool playing = false;
+        private PokemonManager pokeManager;
 
         /// <summary>
-        /// Number of attempts remaining for the round.
+        /// Pokemon available to choose based on game settings.
         /// </summary>
-        private int attemptsRemaining;
-
-        /// <summary>
-        /// Number of rounds remaining for the game.
-        /// </summary>
-        private int roundsRemaining;
-
-        /// <summary>
-        /// Master list of Pokemon.
-        /// </summary>
-        private List<Pokemon> pokemon;
-
-        /// <summary>
-        /// List of Pokemon available to choose based on game settings.
-        /// </summary>
-        private List<Pokemon> toChoose;
+        private Pokemon[] toChoose;
 
         /// <summary>
         /// Chosen Pokemon for the player to guess.
@@ -44,183 +27,66 @@ namespace WhosThatPokemon
         private Pokemon chosen;
 
         /// <summary>
-        /// Random number generator.
-        /// </summary>
-        private Random randomGenerator;        
-
-        /// <summary>
-        /// Game settingsused to determine Pokemon to choose,
+        /// Game settings used to determine Pokemon to choose,
         /// the game restrictions, and the hints given.
         /// </summary>
         private Settings gameSettings;
 
         /// <summary>
-        /// Time remaining for the round.
+        /// Determines if game logic code is run.
         /// </summary>
-        private TimeSpan timeRemaining;
+        private bool playing = false;
 
         /// <summary>
-        /// Gets the game time in a string format.
-        /// </summary>
-        private string GameTime 
-        { 
-            get 
-            { 
-                return timeRemaining.Minutes + ":" + 
-                    timeRemaining.Seconds.ToString("00"); 
-            } 
-        }
-
-        /// <summary>
-        /// Create an instance of GameForm.
+        /// Create an instance of the GameForm.
         /// </summary>
         public GameForm()
         {
             InitializeComponent();
-
-            randomGenerator = new Random();
-            LoadPokemon();
-
-            // During game textbox should always have focus
-            textBox1.LostFocus += textBox1_LostFocus;
+            
+            pokeManager = new PokemonManager();
+            toChoose = new Pokemon[0];
         }
 
         /// <summary>
-        /// Adds a guess to the guess list view.
+        /// Adds a guess to the guess list view and displays the guess results.
         /// </summary>
         /// <param name="name">Player guess</param>
-        private void AddGuess(string name)
+        private void AddGuess(Pokemon guess)
         {
-            // Display guess information
-            string msg = "";
-            double strength = GetGuessStrength(name, ref msg);
-            if (msg == "")
+            if(guess == null || guess.Name == null)
             {
-                msg = "No similarities in: " + gameSettings.hints;
-            }
-            c_hints.Text = msg;
-            c_pokemon.Text = name;
-
-            // If Pokemon already guessed, do not add to guess list.
-            if (listView1.FindItemWithText(name) != null)
-            {
+                Console.WriteLine("AddGuess passed a null value");
                 return;
             }
 
-            // Text color determined by guess strength.
-            ListViewItem item = new ListViewItem(name, (int)strength);
-            if (strength < 1) { item.ForeColor = Color.Blue; }
-            else if (strength < 4) { item.ForeColor = Color.Aquamarine; }
-            else if (strength < 6) { item.ForeColor = Color.LightCoral; }
-            else { item.ForeColor = Color.Red; }
+            // If Pokemon already guessed, do not add to guess list
+            ListViewItem item = guessList.FindItemWithText(guess.Name);
+            if (item != null)
+            {
+                // Display previous guess information
+                hintsText.Text = item.ToolTipText;
+                pokemonText.Text = guess.Name;
+                return;
+            }
+
+            // Get the guess strength information
+            string msg = "";
+            int strength = GetGuessStrength(guess, ref msg);
 
             // Insert guess into list based on guess strength.
-            // Use image index to store guess strength.
-            bool added = false;
-            for (int i = 0; i < listView1.Items.Count; i++)
+            guessList.AddGuess(guess.Name, strength, msg);
+
+            // Update display
+            ReduceAttemptsRemaining();
+            if (gameSettings.OutOfGuesses)
             {
-                if (listView1.Items[i].ImageIndex <= item.ImageIndex)
-                {
-                    listView1.Items.Insert(i, item);
-                    added = true;
-                    break;
-                }
-            }
-            if (!added)
-            {
-                listView1.Items.Add(item);
-            }
-
-            // Resize list view column width if neccessary
-            DisplayFullColumn(listView1);
-
-            // If game based on guess count, reduce guess count.
-            if (gameSettings.hasLimit)
-            {
-                attemptsRemaining--;
-                c_guess.Text = attemptsRemaining.ToString();
-                if (attemptsRemaining <= 0)
-                {
-                    EndRound(false);
-                }
-            }
-        }
-
-        /// <summary>
-        /// Determies if two Pokemon belong to same family.
-        /// </summary>
-        /// <param name="x">First Pokemon</param>
-        /// <param name="y">Second Pokemon</param>
-        /// <returns>True if same family</returns>
-        private bool AreFamily(Pokemon x, Pokemon y)
-        {
-            // Traverse all previous family members.
-            Pokemon temp = x;
-            while (temp.PrevEvo != "")
-            {
-                temp = toChoose.Find(a => a.Name == temp.PrevEvo);
-
-                if (temp == null) 
-                { 
-                    break; 
-                }
-                if (temp.Name == y.Name)
-                {
-                    return true;
-                }
-            }
-
-            // Traverse all next family members.
-            temp = x;
-            while (temp.NextEvo != "")
-            {
-                temp = toChoose.Find(a => a.Name == temp.NextEvo);
-                if (temp == null) 
-                { 
-                    break; 
-                }
-                if (temp.Name == y.Name)
-                {
-                    return true;
-                }
-            }
-
-            return false;
-        }
-
-        /// <summary>
-        /// Sets the chosen pokemon to a new value.
-        /// </summary>
-        public void ChooseNextPokemon()
-        {
-            Pokemon newPokemon = null;
-            do
-            {
-                newPokemon = toChoose[randomGenerator.Next(0, toChoose.Count)];
-            } while (newPokemon == chosen);
-
-            chosen = newPokemon;
-        }
-
-        /// <summary>
-        /// Resizes the guess list view column width so that
-        /// the first column is fully displayed. Width depends
-        /// on the vertical scroll bar being visible.
-        /// </summary>
-        /// <param name="displayScroll">Vertical scroll bar displayed?</param>
-        private void DisplayFullColumn(ListView a)
-        {
-            // If items overflow, reduce column size due to scroll bar
-            if (a.Items.Count != 0 &&
-                a.Height - a.Items[0].Bounds.Y <
-                a.Items.Count * a.Items[0].Bounds.Height)
-            {
-                a.Columns[0].Width = (a.Width -
-                    SystemInformation.VerticalScrollBarWidth);
-            }
+                EndRound(false);
+            }  
             else
             {
-                a.Columns[0].Width = a.Width;
+                hintsText.Text = msg;
+                pokemonText.Text = guess.Name;
             }
         }
 
@@ -232,79 +98,91 @@ namespace WhosThatPokemon
             // Reset playing variables
             playing = false;
             chosen = null;
-            listView1.Items.Clear();
+            roundTimer.Stop();
 
-            // Reset text
-            c_time.Text = "0.00";
-            c_guess.Text = "0";
-            c_rounds.Text = "0";
-            c_header.Text = "Last Guess:";
-            c_pokeImage.Hide();
-            c_pokemon.ResetText();
-            c_hints.ResetText();
-            textBox1.ResetText();
+            // Reset display
+            timeRemainingText.Text = "0.00";
+            guessesRemainingText.Text = "0";
+            roundRemainingText.Text = "0";
+            headerText.Text = "Last Guess:";
+            pokemonText.ResetText();
+            hintsText.ResetText();
+            guessTextBox.ResetText();
+            guessList.Items.Clear();
+            pokemonImage.Hide();
 
             // Disable input
-            button1.Visible = false;
-            textBox1.Enabled = false;
+            nextButton.Visible = false;
+            guessTextBox.Enabled = false;
+            guessList.DoubleClick -= GuessList_DoubleClick;
 
             // Reset background colors
-            c_header.BackColor = c_pokemon.BackColor = Color.White;
+            headerText.BackColor = pokemonText.BackColor = Color.White;
         }
 
         /// <summary>
-        /// Sets the playing values to the end round values.
+        /// Ends the round and displays the selected Pokemon.
         /// </summary>
         /// <param name="win">Did player win?</param>
         private void EndRound(bool win)
         {
             // Reset playing variables 
             playing = false;
-            timer1.Stop();
+            roundTimer.Stop();
 
             // Reset text
-            textBox1.ResetText();
-            c_hints.ResetText();
+            guessTextBox.ResetText();
+            hintsText.ResetText();
+            guessTextBox.Enabled = false;
 
             // Display chosen Pokemon
-            c_header.Text = "It's";
-            c_pokemon.Text = chosen.Name + "!";
-            c_pokeImage.Visible = true;
+            headerText.Text = "It's";
+            pokemonText.Text = chosen.Name + "!";
+            pokemonImage.Visible = true;
 
-            // Background color changes depending on win value.
-            c_header.BackColor = c_pokemon.BackColor =
+            // Background color changes depending on if the player won
+            headerText.BackColor = pokemonText.BackColor =
                 win ? Color.LimeGreen : Color.FromArgb(255, 64, 64);
 
+            // Disable guessList double click so display will not update
+            guessList.DoubleClick -= GuessList_DoubleClick;
+
             // Allow for advance to next round
-            textBox1.Enabled = false;
-            button1.Visible = true;
-            button1.Focus();
+            nextButton.Visible = true;
+            nextButton.Focus();
         }
 
         /// <summary>
         /// Return a value that determines the strength of the guess
-        /// compared to the chosen Pokemon. Strength determined based
-        /// on the number of similarities compared to the total
-        /// similarities tested. 
+        /// compared to the chosen Pokemon. Higher values indicate
+        /// increased similarities based on the game settings.
         /// </summary>
-        /// <param name="name">Player guess.</param>
+        /// <param name="guessed">Player guess.</param>
         /// <param name="msg">Reference to the message to be displayed.</param>
-        /// <returns>Strength of guess.</returns>
-        private double GetGuessStrength(string name, ref string msg)
+        /// <returns>Strength of the guess.</returns>
+        private int GetGuessStrength(Pokemon guessed, ref string msg)
         {
-            // Do nothing if the guess is not valid.
-            Pokemon guess = toChoose.Find(a => a.Name == name);
-            if (guess == null) return 0;
+            if (guessed == null)
+            {
+                Console.WriteLine("GetGuessStrength passed a null value.");
+                return 0;
+            }
+            if(chosen == null)
+            {
+                Console.WriteLine("No selected Pokemon to compare.");
+                return 0;
+            }
 
-            // Strength values
+            // Set values
+            msg = msg ?? "";
             int maxStrength = 0;
             double strength = 0;
 
             // Family guess strength: +3
-            if (Hints.Family == (gameSettings.hints & Hints.Family))
+            if (Hints.Family == (gameSettings.Hints & Hints.Family))
             {
                 maxStrength++;
-                if(AreFamily(chosen, guess))
+                if(pokeManager.AreFamily(chosen.Name, guessed.Name))
                 {
                     msg += "Same family\n";
                     strength += 3;
@@ -312,12 +190,12 @@ namespace WhosThatPokemon
             }
 
             // Type guess strength: +1.5
-            if(Hints.Type == (gameSettings.hints & Hints.Type))
+            if(Hints.Type == (gameSettings.Hints & Hints.Type))
             {
                 maxStrength += chosen.Types.Length;
 
                 // Keep track of number of type similarities.
-                int similarities = chosen.SameTypeCount(guess);
+                int similarities = pokeManager.SameTypeCount(chosen, guessed);
                 if (similarities != 0)
                 {
                     msg += String.Format("{0} in common\n",
@@ -327,12 +205,12 @@ namespace WhosThatPokemon
             }
 
             // Ability guess strength: +1
-            if(Hints.Ability == (gameSettings.hints & Hints.Ability))
+            if(Hints.Ability == (gameSettings.Hints & Hints.Ability))
             {
                 maxStrength += chosen.Abilities.Length;
 
                 // Keep track of number of ability similarities.
-                int similarities = chosen.SameAbilityCount(guess);
+                int similarities = pokeManager.SameAbilityCount(chosen, guessed);
                 if (similarities != 0)
                 {
                     msg += String.Format("{0} in common\n",
@@ -342,10 +220,10 @@ namespace WhosThatPokemon
             }
 
             // Generation guess strength: +1
-            if(Hints.Generation == (gameSettings.hints & Hints.Generation))
+            if(Hints.Generation == (gameSettings.Hints & Hints.Generation))
             {
                 maxStrength++;
-                if(guess.Gen == chosen.Gen)
+                if(guessed.Gen == chosen.Gen)
                 {
                     strength++;
                     msg += "Same generation\n";
@@ -353,10 +231,10 @@ namespace WhosThatPokemon
             }
 
             // First letter guess strength: +1
-            if(Hints.FirstLetter == (gameSettings.hints & Hints.FirstLetter))
+            if(Hints.FirstLetter == (gameSettings.Hints & Hints.FirstLetter))
             {
                 maxStrength++;
-                if(guess.Name[0] == chosen.Name[0])
+                if(guessed.Name[0] == chosen.Name[0])
                 {
                     strength++;
                     msg += "Starts with the same letter\n";
@@ -364,47 +242,29 @@ namespace WhosThatPokemon
             }
 
             // Name length guess strength: +1
-            if(Hints.NameLength == (gameSettings.hints & Hints.NameLength))
+            if(Hints.NameLength == (gameSettings.Hints & Hints.NameLength))
             {
                 maxStrength++;
-                if(guess.Name.Length == chosen.Name.Length)
+                if(guessed.Name.Length == chosen.Name.Length)
                 {
                     strength++;
-                    msg += "Same number of letters (" + guess.Name.Length + ")\n";
+                    msg += "Same number of letters (" + guessed.Name.Length + ")\n";
                 }
             }
 
-            // Return strength value
-            return strength / maxStrength * 10;
-        }
-
-        /// <summary>
-        /// Load information from XML document.
-        /// </summary>
-        public void LoadPokemon()
-        {
-            pokemon = new List<Pokemon>();
-            var sw = new System.Diagnostics.Stopwatch();
-            sw.Start();
-            // Read in values from document
-            XDocument doc = XDocument.Load("pokemon.xml");
-            foreach (var p in doc.Descendants("Pokemon"))
+            // Set an empty message to a default message
+            if (msg == "")
             {
-                Pokemon poke = new Pokemon(
-                    p.Element("Name").Value,
-                    Convert.ToInt16(p.Element("Gen").Value),
-                    p.Element("Type1").Value,
-                    p.Element("Type2").Value,
-                    p.Element("Ability1").Value,
-                    p.Element("Ability2").Value,
-                    p.Element("Ability3").Value,
-                    p.Element("PrevEvo").Value,
-                    p.Element("NextEvo").Value);
-                pokemon.Add(poke);
+                msg = "No similarities in: " + gameSettings.Hints;
             }
-            sw.Stop();
-            Console.WriteLine(sw.ElapsedMilliseconds);
-        }        
+
+            // Return strength value
+            if (maxStrength == 0)
+            {
+                maxStrength = 1;
+            }
+            return (int)(strength / maxStrength * 10);
+        }    
 
         /// <summary>
         /// Displays the New Game Form.
@@ -412,31 +272,33 @@ namespace WhosThatPokemon
         private void NewGame() 
         {
             // Stop timer
-            timer1.Stop();
+            roundTimer.Stop();
 
             // Display new game form
-            using (var newGameForm = new NewGame())
+            using (var newGameForm = new NewGameForm())
             {
                 if (newGameForm.ShowDialog() == DialogResult.OK)
-                {   // End current game and start a new game
+                {
                     EndGame();
 
                     // Set new game settings
-                    gameSettings = newGameForm.gameSettings;
-                    roundsRemaining = gameSettings.numRounds;
+                    gameSettings = newGameForm.GameSettings;
+                    if(gameSettings == null)
+                    {
+                        MessageBox.Show("Error creating game settings. Could not start game.");
+                        return;
+                    }
 
                     // Set avaiable Pokemon to be chosen based on settings
-
-                    toChoose = pokemon.FindAll(a => gameSettings.generations.Contains(a.Gen));
-
-                    textBox1.AutoCompleteCustomSource.Clear();
-                    textBox1.AutoCompleteCustomSource.AddRange(toChoose.Select(a => a.Name).ToArray());
+                    toChoose = pokeManager.GetSubset(a => gameSettings.Generations.Contains(a.Gen)).ToArray();
+                    guessTextBox.AutoCompleteCustomSource.Clear();
+                    guessTextBox.AutoCompleteCustomSource.AddRange(toChoose.Select(a => a.Name).ToArray());
                     
                     NextRound();
                 }
-                else if (playing && gameSettings.isTimed)
+                else if (playing && gameSettings.IsTimed)
                 {   // Resume current game timer
-                    timer1.Start();
+                    roundTimer.Start();
                 }
             }
         }
@@ -446,61 +308,81 @@ namespace WhosThatPokemon
         /// </summary>
         private void NextRound()
         {
-            // Reduce rounds remaining
-            button1.Visible = false;
-            roundsRemaining--;
-            c_rounds.Text = roundsRemaining.ToString();
+            // End game if no more rounds remain
+            if (gameSettings.RoundsRemaining <= 0)
+            {
+                MessageBox.Show("No more round remaining. Thanks for playing!");
+                EndGame();
+                return;
+            }
 
-            // Reset display information
-            listView1.Items.Clear();
-            DisplayFullColumn(listView1);
-            c_header.Text = "Last Guess:";
-            c_pokemon.ResetText();
-            c_pokemon.BackColor = Color.White;
-            c_header.BackColor = Color.White;
+            // Reduce rounds remaining
+            ReduceRoundsRemaining();
 
             // Choose next pokemon
-            c_pokeImage.Visible = false;
-            ChooseNextPokemon();
-            c_pokeImage.Load("PokemonSprites\\" + chosen.Name + ".jpg");
+            pokemonImage.Visible = false;
+            chosen = pokeManager.SelectRandomPokemon(toChoose);
+            if (chosen == null)
+            {
+                MessageBox.Show("Could not select a Pokemon. Ending current game.");
+                EndGame();
+                return;
+            }
+            pokemonImage.ImageLocation = "PokemonSprites\\" + chosen.Name + ".jpg";
+
+            // Reset display information
+            hintsText.Text = "";
+            headerText.Text = "Last Guess:";
+            guessList.Items.Clear();
+            guessList.UpdateColumnWidth();
+            pokemonText.ResetText();
+            pokemonText.BackColor = Color.White;
+            headerText.BackColor = Color.White;
 
             // Enable input
-            textBox1.Enabled = true;
-            textBox1.Focus();
+            guessList.Enabled = true;
+            guessTextBox.Enabled = true;
+            guessTextBox.Focus();
+            guessList.DoubleClick += GuessList_DoubleClick;
 
             // Set round limits based on game settings
             playing = true;
-            if (gameSettings.hasLimit)
+            nextButton.Visible = false;
+            gameSettings.ResetRoundLimits();
+            guessesRemainingText.Text = gameSettings.GuessesRemainingString;
+            timeRemainingText.Text = gameSettings.TimeRemainingString;
+            if (gameSettings.IsTimed)
             {
-                attemptsRemaining = gameSettings.numGuesses;
-                c_guess.Text = attemptsRemaining.ToString();
+                roundTimer.Start();
             }
-            else { c_guess.Text = "--"; }
-            if (gameSettings.isTimed)
-            {
-                timeRemaining = gameSettings.time;
-                c_time.Text = GameTime;
-                timer1.Start();
-            }
-            else { c_time.Text = "----"; }
         }
 
         /// <summary>
-        /// Moves onto next round of game.
+        /// Reduces the attempts remaining and updates display
         /// </summary>
-        /// <param name="sender">Sender</param>
-        /// <param name="e">Event args</param>
-        private void button1_Click(object sender, EventArgs e)
+        private void ReduceAttemptsRemaining()
         {
-            if (roundsRemaining > 0)
-            {
-                NextRound();
-            }
-            else
-            {
-                EndGame();
-                MessageBox.Show("Thanks for playing!");
-            }
+            gameSettings.ReduceAttemptsRemaining();
+            guessesRemainingText.Text = gameSettings.GuessesRemainingString;
+        }
+
+        /// <summary>
+        /// Reduces the rounds remaining and updates display
+        /// </summary>
+        private void ReduceRoundsRemaining()
+        {
+            gameSettings.ReduceRoundsRemaining();
+            roundRemainingText.Text = gameSettings.RoundsRemaining.ToString();
+        }
+
+        /// <summary>
+        /// Reduces the time remaining and updates display
+        /// </summary>
+        /// <param name="elapsedMilliseconds">Elapsed milliseconds</param>
+        private void ReduceTimeRemaining(int elapsedMilliseconds)
+        {
+            gameSettings.ReduceTimeRemaining(elapsedMilliseconds);
+            timeRemainingText.Text = gameSettings.TimeRemainingString;
         }
 
         /// <summary>
@@ -508,19 +390,30 @@ namespace WhosThatPokemon
         /// </summary>
         /// <param name="sender">Sender</param>
         /// <param name="e">Event args</param>
-        private void listView1_DoubleClick(object sender, EventArgs e)
+        private void GuessList_DoubleClick(object sender, EventArgs e)
         {
-            AddGuess(listView1.SelectedItems[0].Text);
+            if(guessList.SelectedItems.Count > 0)
+            {
+                Pokemon guess = pokeManager.GetPokemon(guessList.SelectedItems[0].Text);
+                AddGuess(guess);
+            }
         }
 
         /// <summary>
-        /// Calls function to start new game.
+        /// Reduces time remaining by timer interval.
         /// </summary>
         /// <param name="sender">Sender</param>
         /// <param name="e">Event args</param>
-        private void newToolStripMenuItem_Click(object sender, EventArgs e)
+        private void GameTimer_Tick(object sender, EventArgs e)
         {
-            NewGame();
+            // Reduce time remaining and display.
+            ReduceTimeRemaining(roundTimer.Interval);
+
+            // Round is over, player loses
+            if (gameSettings.OutOfTime)
+            {
+                EndRound(false);
+            }
         }
 
         /// <summary>
@@ -528,12 +421,12 @@ namespace WhosThatPokemon
         /// </summary>
         /// <param name="sender">ender</param>
         /// <param name="e">Key Event args</param>
-        private void textBox1_KeyDown(object sender, KeyEventArgs e)
+        private void GuessTextBox_KeyDown(object sender, KeyEventArgs e)
         {
             // Round is over so do nothing
             if (!playing)
             {
-                textBox1.ResetText();
+                guessTextBox.ResetText();
                 e.Handled = true;
                 return;
             }
@@ -541,21 +434,20 @@ namespace WhosThatPokemon
             if (e.KeyCode == Keys.Enter)
             {
                 // Find Pokemon corresponding to guess
-                Pokemon guess = toChoose.Find(
-                    a => String.Compare(a.Name, textBox1.Text, true) == 0);
+                Pokemon guess = pokeManager.GetPokemon(guessTextBox.Text);
 
                 // End game if guess correct
                 if (guess == chosen)
                 {
                     EndRound(true);
                 }
-                // Add guess if a corresponding Pokemon was found
-                else if (guess != null)
+                // Add guess
+                else
                 {
-                    AddGuess(guess.Name);
+                    AddGuess(guess);
                 }
 
-                textBox1.ResetText();
+                guessTextBox.ResetText();
                 e.Handled = true;
             }
         }
@@ -565,34 +457,29 @@ namespace WhosThatPokemon
         /// </summary>
         /// <param name="sender">Sender</param>
         /// <param name="e">Event args</param>
-        void textBox1_LostFocus(object sender, EventArgs e)
+        void GuessTextBox_LostFocus(object sender, EventArgs e)
         {
-            textBox1.Focus();
+            guessTextBox.Focus();
         }
 
         /// <summary>
-        /// Reduces time remaining by timer interval.
+        /// Calls function to start new game.
         /// </summary>
         /// <param name="sender">Sender</param>
         /// <param name="e">Event args</param>
-        private void timer1_Tick(object sender, EventArgs e)
+        private void NewToolStripMenuItem_Click(object sender, EventArgs e)
         {
-            // Reduce time remaining and display.
-            timeRemaining = timeRemaining.Subtract(
-                new TimeSpan(0, 0, 0, 0, timer1.Interval));
-            c_time.Text = GameTime;
+            NewGame();
+        }
 
-            /* 
-             * If no time remaining, end round with player having not won.
-             * Since timespan uses milliseconds, check time manually.
-             * Doing so with TimeSpan.Zero causes misrepresentation of the
-             * display values.
-             */
-            if (timeRemaining.Hours <= 0 && timeRemaining.Minutes <= 0 &&
-                timeRemaining.Seconds <= 0)
-            {
-                EndRound(false);
-            }
+        /// <summary>
+        /// Moves onto next round of game.
+        /// </summary>
+        /// <param name="sender">Sender</param>
+        /// <param name="e">Event args</param>
+        private void NextButton_Click(object sender, EventArgs e)
+        {
+            NextRound();
         }
 
         /// <summary>
@@ -600,18 +487,38 @@ namespace WhosThatPokemon
         /// </summary>
         /// <param name="sender">Sender</param>
         /// <param name="e">Event args</param>
-        private void viewToolStripMenuItem_Click(object sender, EventArgs e)
+        private void ViewToolStripMenuItem_Click(object sender, EventArgs e)
         {
-            using (var ViewForm = new Viewer(pokemon))
+            using (var pokedex = new PokedexForm(pokeManager))
             {
-                timer1.Stop();
-                ViewForm.ShowDialog();
+                roundTimer.Stop();
+                pokedex.ShowDialog();
 
-                if (playing && gameSettings.isTimed)
+                if (playing && gameSettings.IsTimed)
                 {
-                    timer1.Start();
+                    roundTimer.Start();
                 }
             }
-        }        
+        }
+
+        /// <summary>
+        /// Delegate that loads Pokemon from the database when the form is loaded.
+        /// </summary>
+        /// <param name="sender"></param>
+        /// <param name="e"></param>
+        private void GameForm_Load(object sender, EventArgs e)
+        {
+            if(!pokeManager.LoadPokemon())
+            {
+                // Application failed to connect to the database
+                MessageBox.Show(
+                    "Could not load Pokemon from the database. Exiting the program",
+                    "Error");
+                Close();
+            }
+
+            // During game textbox should always have focus
+            guessTextBox.LostFocus += GuessTextBox_LostFocus;
+        }
     }
 }
