@@ -14,7 +14,15 @@ In addition to the database changes, for this enhancement I went over my code to
 ## GameOrganizer Database Class
 
 ```c#
- /// <summary>
+using System;
+using System.Configuration;
+using System.Collections.Generic;
+using MongoDB.Driver;
+using MongoDB.Bson;
+
+namespace GameOrganizer
+{
+    /// <summary>
     /// Handles the MongoDB calls for the game collection.
     /// </summary>
     static class MongoDbManager
@@ -52,10 +60,22 @@ In addition to the database changes, for this enhancement I went over my code to
         }
 
         /// <summary>
+        /// Checks to see if the server is currently running.
+        /// </summary>
+        /// <returns>True if connection established</returns>
+        public static bool ConnectionEstablished()
+        {
+            MongoClient client = new MongoClient();
+            var db = client.GetDatabase(
+                ConfigurationManager.AppSettings["Database"]);
+            return db.RunCommandAsync((Command<BsonDocument>)"{ping:1}").Wait(1000);
+        }
+
+        /// <summary>
         /// Returns the game information for the game with the given ObjectId.
         /// </summary>
         /// <param name="id">Game ObjectId</param>
-        /// <returns>The game with the ObjectId, null if not found</returns>
+        /// <returns>The game with the given ObjectId, null if not found</returns>
         public static Game FindOne(ObjectId id)
         {
             MongoClient client = new MongoClient();
@@ -124,8 +144,9 @@ In addition to the database changes, for this enhancement I went over my code to
             try
             {
                 // Create the BsonDocument used to run the query
+                string collectionQuery = String.Format("{{find: \"{0}\"}}", ConfigurationManager.AppSettings["Collection"]);
                 BsonDocument document = new BsonDocument();
-                document.AddRange(MongoDB.Bson.Serialization.BsonSerializer.Deserialize<BsonDocument>("{find: \"Games\"}"));
+                document.AddRange(MongoDB.Bson.Serialization.BsonSerializer.Deserialize<BsonDocument>(collectionQuery));
                 document.AddRange(TrimDocument(MongoDB.Bson.Serialization.BsonSerializer.Deserialize<BsonDocument>(query)));
                 
                 // Run query and find the games within the resulting BsonDocument
@@ -192,11 +213,17 @@ In addition to the database changes, for this enhancement I went over my code to
         /// <param name="previousValue">Previous game values</param>
         /// <param name="newValue">New game values</param>
         /// <returns>True if update successful</returns>
-        public static bool UpdateGame(Game previousValue, Game newValue)
+        public static bool UpdateGame(ObjectId gameId, Game newValue)
         {
-            if (previousValue == null || newValue == null)
+            if (gameId == ObjectId.Empty || newValue == null)
             {
                 Console.WriteLine("MongoDbManager UpdateGame() passed a null value");
+                return false;
+            }
+
+            if(newValue.Id != ObjectId.Empty && gameId != newValue.Id)
+            {
+                Console.WriteLine("Cannot update game; object ids do not match.");
                 return false;
             }
 
@@ -204,9 +231,11 @@ In addition to the database changes, for this enhancement I went over my code to
             var db = client.GetDatabase("GameOrganizer");
             var collection = db.GetCollection<Game>("Games");
 
-            Game result = collection.FindOneAndReplace(a => a.Id == previousValue.Id, newValue);
+            Game result = collection.FindOneAndReplace(a => a.Id == gameId, newValue);
             return result != null;
         }
     }
+}
+
 ```
 [Return to Homepage](https://davidmccannjr.github.io/ePortfolio/)
