@@ -11,3 +11,5 @@ The following video walks through the "Who's That Pokemon" artifact that will fo
 The following video walks through the "Game Organizer" artifact that will focus on enhancements revolving around software design / engineering as well as data structures / algorithms. The video demonstrates the project, walks through the original code before enhancements have been made, and details the enhancements that are planned to be made.
 
 {% include youtubePlayer.html id="9kMhhvG_1Tg" %}
+
+[Return to Homepage](https://davidmccannjr.github.io/ePortfolio/)
