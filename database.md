@@ -14,7 +14,7 @@
   
 ## Image
 
-![useful image]({{ https://github.com/davidmccannjr/ePortfolio }}/Images/WhosThatPokemon/QueryResult.png)
+![useful image]({{ site.url }}/Images/WhosThatPokemon/QueryResult.png)
 
 ## Python Script
 
