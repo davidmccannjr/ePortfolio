@@ -1,4 +1,4 @@
-## Welcome to David McCann's SNHU ePortfolio
+## Welcome to David McCann's SNHU Capstone Project 
 
 This ePortfolio is a final capstone project for Southern New Hampshire University's Bachelor's of Computer Science curriculum. In this ePortfolio, the goal was to take two previous artifacts and enhance them to showcase my growth and knowledge in Software Design and Engineering, Algorithms and Data Structures, and Databases. Two code review videos recorded before enhancements were made detail the artifacts and the enhancements that took place throughout the capstone project. Links are provided below to the code reviews as well as the completed enhancements. Additional images and code samples detailing the project can be found on GitHub as well.
 
