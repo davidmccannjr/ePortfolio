@@ -144,7 +144,7 @@ namespace GameOrganizer
             try
             {
                 // Create the BsonDocument used to run the query
-                string collectionQuery = String.Format("{{find: \"{0}\"}}", ConfigurationManager.AppSettings["Collection"]);
+                string collectionQuery = "{{find: \"ConfigurationManager.AppSettings["Collection"]\"}}";
                 BsonDocument document = new BsonDocument();
                 document.AddRange(MongoDB.Bson.Serialization.BsonSerializer.Deserialize<BsonDocument>(collectionQuery));
                 document.AddRange(TrimDocument(MongoDB.Bson.Serialization.BsonSerializer.Deserialize<BsonDocument>(query)));
