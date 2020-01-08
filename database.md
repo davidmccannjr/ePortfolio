@@ -11,8 +11,6 @@
   When enhancing this artifact, I learned how MongoDB is used for C# applications, which included information like how to add the necessary references and how to create a relationship between the MongoDB collection attributes and the C# class variables. I had some experience with using MongoDB from a class I took, but this was an opportunity to further gain experience with using MongoDB. 
   
   When creating the database query in the python application, I realized I had to learn how to combine the different queries and variables based on the input from the user. The API could filter the Pokémon list based on 5 variables: the Pokémon types, the Pokémon abilities, the generation it was introduced, the first letter of the name, and the length of the name. One specific challenge I faced was how to combine all of these possible queries into a single query. I originally found out PyMongo used dictionaries as queries, so I tried to add the queries to a dictionary, such as query[‘name’], but this didn’t work due to some queries requiring the “$and” operator, which couldn’t be combined with this syntax, and two queries being based on the ‘name’ attribute. In the end, I separated each specific query into their own dictionary and used the “$and” operator to combined the queries. It was a good learning experience researching and learning how to overcome these challenges, and now I feel more comfortable working with MongoDB in both a C# and Python environment.
-  
-## Image
 
 ![useful image]({{ site.url }}/ePortfolio/Images/WhosThatPokemon/QueryResult.png)
 
