@@ -1,5 +1,7 @@
 # Code Reviews
 
+Note: Videos have higher resolutions and are better to view when watching directly on Youtube.
+
 ## Pokemon Code Review
 
 The following video walks through the "Who's That Pokemon" artifact that will focus on enhancements revolving around databases. The video demonstrates the project, walks through the original code before enhancements have been made, and details the enhancements that are planned to be made.
