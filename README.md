@@ -25,4 +25,4 @@ It is a programmer’s responsibility to write the code for a project so that it
 
 ### Personal Website
 To view more of my work, please visit my website.
-http://www.davidmccannjr.com/
+[http://www.davidmccannjr.com/](http://www.davidmccannjr.com/)
