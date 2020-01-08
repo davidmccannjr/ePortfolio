@@ -12,8 +12,6 @@ The challenges I faced this week were taking MongoDb style queries and trying to
   
 Once learning of this method, I decided to load in JSON files which I could easily deserialize to a BsonDocument object, which I could then use to run the custom query. As stated before, as a security measure I only pulled the appropriate information from the BsonDocument that could be used in the db.runCommand() query, and I manually input the collection filter into the document from the code so that I knew the query was running on the specific collection. I learned the the db.runCommand() command would return a BsonDocument, and that the results are stored in the [cursor][firstBatch] index of the BsonDocument. Once I learned this, I could take the result, find the elements, and deserialize them into a list of games, which I then returned and displayed in the custom query form. I had to go online to search for answers for a lot of questions, but thankfully there are a lot of questions with help and feedback that proved invaluable in solving these challenges. 
 
-## Image
-
 ![useful image]({{ site.url }}/ePortfolio/Images/GameOrganizer/CustomQueryResult.png)
 
 ## Custom Query Form Class
